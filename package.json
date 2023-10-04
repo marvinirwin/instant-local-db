@@ -1,0 +1,20 @@
+{
+  "name": "instant-local-db",
+  "version": "1.0.0",
+  "description": "",
+  "main": "clone-connection.js",
+  "scripts": {
+    "run": "node ./clone-connection.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/marvinirwin/instant-local-db.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/marvinirwin/instant-local-db/issues"
+  },
+  "homepage": "https://github.com/marvinirwin/instant-local-db#readme"
+}
