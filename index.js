@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 import cloneDatabase from "./clone-connection.js";
 import yargs from "yargs";
 import { hideBin } from "yargs/helpers";
