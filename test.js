@@ -4,31 +4,36 @@ import cloneDatabase, {
   waitForMongoToStart,
   waitForPostgresToStart,
   exec,
-  networkName
+  networkName,
+  pull,
 } from "./clone-connection.js";
 import getPort from "get-port";
 
 async function testDatabaseClone() {
   try {
     const networkName = "clone-connection";
+    const database = "test";
     const databases = ["postgres", "mongodb"];
     const docker = new d();
     let network = docker.getNetwork(networkName);
     try {
       await network.inspect();
     } catch (error) {
-      console.log(`No existing network with name ${networkName}, creating one.`);
+      console.log(
+        `No existing network with name ${networkName}, creating one.`
+      );
       network = await docker.createNetwork({ Name: networkName });
     }
     for (let db of databases) {
       const sourcePort = await getPort();
       // randomPort
-      const databaseDefaultPort = db === "postgres" ? 5432 : 27017;
-      const database = "test";
+      const image = db === "postgres" ? "postgres" : "mongo";
+      const databaseDefaultPort = image === "postgres" ? 5432 : 27017;
+      await pull(docker, image);
       const config = {
         databaseType: db,
         host: database, // set the host to db so that the containers can address each other (On linux they could just use localHost, but not on MacOS)
-        port: databaseDefaultPort,
+        port: sourcePort,
         database: database,
         user: "test",
         password: "test",
@@ -46,70 +51,66 @@ async function testDatabaseClone() {
       // Start source database
       const sourceContainer = await docker.createContainer({
         name: config.database,
-        Image: db === "postgres" ? "postgres" : "mongo",
+        Image: image,
         Env: [
-            `POSTGRES_USER=${config.user}`,
-            `POSTGRES_PASSWORD=${config.password}`,
-            `POSTGRES_DB=${config.database}`
+          `POSTGRES_USER=${config.user}`,
+          `POSTGRES_PASSWORD=${config.password}`,
+          `POSTGRES_DB=${config.database}`,
         ],
         ExposedPorts: {
-          "5432/tcp": {},
+          [`${databaseDefaultPort}/tcp`]: {},
         },
         HostConfig: {
           PortBindings: {
-            "5432/tcp": [{ HostPort: `${sourcePort}` }],
+            [`${databaseDefaultPort}/tcp`]: [{ HostPort: `${sourcePort}` }],
           },
-            NetworkMode: networkName,
+          NetworkMode: networkName,
         },
       });
       await sourceContainer.start();
 
       switch (db) {
         case "postgres":
-            await waitForPostgresToStart(sourceContainer, config, docker)
+          await waitForPostgresToStart(sourceContainer, config, docker);
           break;
         case "mongodb":
-            await waitForMongoToStart(sourceContainer, config, docker)
+          await waitForMongoToStart(sourceContainer, config, docker);
           break;
         default:
           throw new Error(`Unsupported database type. ${config.databaseType}`);
       }
-      // Is this going to work
-      // Print container logs
-      const logData = await sourceContainer.logs({
-        follow: false,
-        stdout: true,
-        stderr: true,
-      });
-      console.log(logData.toString());
 
       // Seed data
       let seedCommand;
       if (db === "postgres") {
-        seedCommand = ["psql", "-h", "localhost", "-U", `${config.user}`, "-d", `${config.database}`, "-c", "CREATE TABLE test (id SERIAL PRIMARY KEY, data VARCHAR(100)); INSERT INTO test (data) VALUES ('test');"];
+        seedCommand = [
+          "psql",
+          "-h",
+          "localhost",
+          "-U",
+          `${config.user}`,
+          "-d",
+          `${config.database}`,
+          "-c",
+          "CREATE TABLE test (id SERIAL PRIMARY KEY, data VARCHAR(100)); INSERT INTO test (data) VALUES ('test');",
+        ];
       } else {
-        seedCommand = ["echo", "'db.test.insert({data: \"test\"})'", "|", "mongo", `localhost/${config.database}`];
+        seedCommand = [
+          "mongosh",
+          `localhost/${config.database}`,
+          "--eval",
+          "db.test.insert({data: 'test'})"
+        ];
       }
 
-      console.log(await exec(
-        sourceContainer,
-        seedCommand,
-        { AttachStdout: true, AttachStderr: true },
-        docker
-      ));
-
-      console.log(await exec(
-        sourceContainer,
-        ["psql", "-h", "localhost", "-p", `${config.port}`, "-U", `${config.user}`, "-d", `${config.database}`, "-c", "SELECT * FROM test"],
-        { AttachStdout: true, AttachStderr: true },
-        docker
-      ));
-
-/*       await sourceContainer.exec({
-        Cmd: ["/bin/bash", "-c", seedCommand],
-        AttachStdout: true,
-        AttachStderr: true,
-      }); */
+      console.log(
+        await exec(
+          sourceContainer,
+          seedCommand,
+          { AttachStdout: true, AttachStderr: true },
+          docker
+        )
+      );
 
       // Clone database
       const clonedContainer = await cloneDatabase(config, db);
@@ -117,11 +118,26 @@ async function testDatabaseClone() {
       // Test cloned data
       let testCommand;
       if (db === "postgres") {
-        testCommand = ["psql", "-h", "localhost", "-p", `${config.port}`, "-U", `${config.user}`, "-d", `${config.database}`, "-c", "SELECT * FROM test;"];
+        testCommand = [
+          "psql",
+          "-h",
+          "localhost",
+          "-U",
+          `${config.user}`,
+          "-d",
+          `${config.database}`,
+          "-c",
+          "SELECT * FROM test;",
+        ];
       } else {
-        testCommand = ["echo", "'db.test.find()'", "|", "mongo", `localhost:${config.port}/${config.database}`];
+        testCommand = [
+          "mongosh",
+          "--quiet",
+          `localhost/${config.database}`,
+          "--eval",
+          "db.test.find()"
+        ];
       }
-      // TODO maybe have to use the exec function here, but this might also work because we're not on windows
       const output = await exec(
         clonedContainer,
         testCommand,

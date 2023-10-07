@@ -3,9 +3,9 @@
   "type": "module",
   "version": "1.0.0",
   "description": "",
-  "main": "clone-connection.js",
+  "main": "index.js",
   "scripts": {
-    "run": "node ./clone-connection.js",
+    "start": "node ./index.js",
     "test": "node ./test.js"
   },
   "repository": {
@@ -22,8 +22,10 @@
     "dockerode": "^3.3.5",
     "get-port": "^7.0.0",
     "mongodb": "^6.1.0",
+    "mongodb-uri": "^0.9.7",
     "pg": "^8.11.3",
     "pg-connection-string": "^2.6.2",
-    "wait-port": "^1.1.0"
+    "wait-port": "^1.1.0",
+    "yargs": "^17.7.2"
   }
 }
